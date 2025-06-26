@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>📝 Template Generation Tool</title>
+</head>
+<body>
+    <h1>📝 Excel Template Generator</h1>
+
+    <!-- Step 1: Upload Excel File -->
+    <h2>Step 1: Upload Excel File for Template Generation</h2>
+    <form action="/template/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".xlsx" required>
+        <button type="submit">📤 Upload File</button>
+    </form>
+
+    <!-- Step 2: Generate Templates -->
+    {% if file_uploaded %}
+    <h2>Step 2: Generate Template Slides</h2>
+    <form action="/template/process" method="post">
+        <button type="submit">🛠️ Generate Templates</button>
+    </form>
+    {% endif %}
+
+    <!-- Step 3: Download Links -->
+    {% if download_ready %}
+    <h2>✅ Step 3: Download Generated Slides</h2>
+    <ul>
+        {% for file in output_files %}
+        <li>
+            <a href="/download/{{ file }}" download>📥 {{ file }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if error %}
+    <p style="color:red;"><strong>Error:</strong> {{ error }}</p>
+    {% endif %}
+
+    <br><br>
+    <a href="/">← Back to Home</a>
+</body>
+</html>

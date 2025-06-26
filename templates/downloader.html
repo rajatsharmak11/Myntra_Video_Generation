@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Slide Image Downloader</title>
+</head>
+<body>
+    <h1>🖼️ Slide Image Downloader</h1>
+
+    <h2>Step 1: Upload Excel File</h2>
+    <form action="/downloader/upload" enctype="multipart/form-data" method="post">
+        <input type="file" name="file" accept=".xlsx" required>
+        <button type="submit">📤 Upload File</button>
+    </form>
+
+    {% if file_uploaded %}
+        <h2>Step 2: Start Image Download</h2>
+        <button onclick="startDownload()">🔽 Start Image Download</button>
+        <p id="progress_status">Status: Idle</p>
+        <p id="progress_percent">Progress: 0%</p>
+    {% endif %}
+
+    <div id="download_link" style="display:none;">
+        <h3>✅ Done!</h3>
+        <a id="zip_link" href="">📦 Download slide_images.zip</a>
+    </div>
+
+    {% if error %}
+        <p style="color:red;"><strong>Error:</strong> {{ error }}</p>
+    {% endif %}
+
+    <br><br>
+    <a href="/">← Back to Home</a>
+
+    <script>
+        async function startDownload() {
+            document.getElementById("progress_status").innerText = "Status: Starting...";
+            await fetch("/downloader/start", { method: "POST" });
+
+            const interval = setInterval(async () => {
+                const res = await fetch("/downloader/progress");
+                const data = await res.json();
+
+                document.getElementById("progress_status").innerText = `Status: ${data.status}`;
+                document.getElementById("progress_percent").innerText = `Progress: ${data.percent}%`;
+
+                if (data.done) {
+                    clearInterval(interval);
+                    document.getElementById("download_link").style.display = "block";
+                    document.getElementById("zip_link").href = `/download/${data.output_zip}`;
+                }
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🖼️ Image Merge Tool</title>
+</head>
+<body>
+    <h1>🖼️ Excel Image Merge Tool</h1>
+
+    <!-- Step 1: Upload Excel File -->
+    <h2>Step 1: Upload Excel File for Image Merge</h2>
+    <form action="/image_merge/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".xlsx" required>
+        <button type="submit">📤 Upload File</button>
+    </form>
+
+    <!-- Step 2: Start Merge -->
+    {% if file_uploaded %}
+    <h2>Step 2: Start Image Merge</h2>
+    <form action="/image_merge/process" method="post">
+        <button type="submit">🔄 Start Image Merge</button>
+    </form>
+    {% endif %}
+
+    <!-- Step 3: Download Output -->
+    {% if download_ready %}
+    <h2>✅ Step 3: Download Output File</h2>
+    <a href="/download/{{ output_file }}" download>
+        📥 Download Merged Excel File
+    </a>
+    {% endif %}
+
+    {% if error %}
+    <p style="color:red;"><strong>Error:</strong> {{ error }}</p>
+    {% endif %}
+
+    <br><br>
+    <a href="/">← Back to Home</a>
+</body>
+</html>
