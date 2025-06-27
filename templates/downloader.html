@@ -1,54 +1,78 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Slide Image Downloader</title>
+    <title>📥 Image Downloader Tool</title>
 </head>
 <body>
-    <h1>🖼️ Slide Image Downloader</h1>
+    <h1>📥 Excel Image Downloader</h1>
 
-    <h2>Step 1: Upload Excel File</h2>
-    <form action="/downloader/upload" enctype="multipart/form-data" method="post">
+    <!-- Step 1: Upload Excel File -->
+    <h2>Step 1: Upload Excel File for Downloading Images</h2>
+    <form action="/downloader/upload" method="post" enctype="multipart/form-data">
         <input type="file" name="file" accept=".xlsx" required>
         <button type="submit">📤 Upload File</button>
     </form>
 
+    <!-- Step 2: Start Download -->
     {% if file_uploaded %}
-        <h2>Step 2: Start Image Download</h2>
-        <button onclick="startDownload()">🔽 Start Image Download</button>
-        <p id="progress_status">Status: Idle</p>
-        <p id="progress_percent">Progress: 0%</p>
+    <h2>Step 2: Download Images</h2>
+    <form id="downloadForm" action="/downloader/process" method="post">
+        <button type="submit">📥 Start Download</button>
+    </form>
+
+    <!-- Progress Bar -->
+    <div id="progressContainer" style="margin-top:20px; display:none;">
+        <h3>Progress: <span id="progressValue">0%</span></h3>
+        <progress id="progressBar" value="0" max="100" style="width:300px;"></progress>
+    </div>
     {% endif %}
 
-    <div id="download_link" style="display:none;">
-        <h3>✅ Done!</h3>
-        <a id="zip_link" href="">📦 Download slide_images.zip</a>
-    </div>
+    <!-- Step 3: Download ZIP -->
+    {% if download_ready %}
+    <h2>✅ Step 3: Download ZIP</h2>
+    <a href="/download/{{ zip_file }}" download>📦 Download ZIP</a>
+    {% endif %}
 
     {% if error %}
-        <p style="color:red;"><strong>Error:</strong> {{ error }}</p>
+    <p style="color:red;"><strong>Error:</strong> {{ error }}</p>
     {% endif %}
 
     <br><br>
     <a href="/">← Back to Home</a>
 
     <script>
-        async function startDownload() {
-            document.getElementById("progress_status").innerText = "Status: Starting...";
-            await fetch("/downloader/start", { method: "POST" });
+        const form = document.getElementById("downloadForm");
+        const progressContainer = document.getElementById("progressContainer");
+        const progressBar = document.getElementById("progressBar");
+        const progressValue = document.getElementById("progressValue");
 
-            const interval = setInterval(async () => {
-                const res = await fetch("/downloader/progress");
-                const data = await res.json();
+        form?.addEventListener("submit", function (event) {
+            progressContainer.style.display = "block";
+            updateProgress();
+        });
 
-                document.getElementById("progress_status").innerText = `Status: ${data.status}`;
-                document.getElementById("progress_percent").innerText = `Progress: ${data.percent}%`;
+        function updateProgress() {
+            fetch("/downloader/progress")
+                .then(response => response.json())
+                .then(data => {
+                    progressBar.value = data.percent;
+                    progressValue.textContent = `${data.percent}% (${data.current} of ${data.total})`;
 
-                if (data.done) {
-                    clearInterval(interval);
-                    document.getElementById("download_link").style.display = "block";
-                    document.getElementById("zip_link").href = `/download/${data.output_zip}`;
-                }
-            }, 2000);
+                    if (data.status !== "done" && data.status !== "error") {
+                        setTimeout(updateProgress, 1000);
+                    }
+
+                    if (data.status === "done") {
+                        progressValue.textContent = "✅ Download Complete!";
+                    }
+
+                    if (data.status === "error") {
+                        progressValue.textContent = "❌ Error during download.";
+                    }
+                })
+                .catch(error => {
+                    progressValue.textContent = "❌ Failed to fetch progress.";
+                });
         }
     </script>
 </body>

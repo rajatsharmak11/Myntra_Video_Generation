@@ -1,54 +1,3 @@
-<<<<<<< HEAD
-=======
-# template_generator.py
-
-# import pandas as pd
-# import os
-
-# def generate_all_templates(input_file: str, output_dir: str = "outputs") -> list:
-#     try:
-#         df = pd.read_excel(input_file, sheet_name='Tasks').to_dict('records')
-#         os.makedirs(output_dir, exist_ok=True)
-
-#         s = 'Generate white background'
-#         slides = {1: [], 2: [], 3: [], 4: []}
-
-#         for data in df:
-#             for i in range(1, 5):
-#                 usp_raw = data.get(f'USP {i}', '')
-#                 if not usp_raw or not isinstance(usp_raw, str):
-#                     continue
-
-#                 usp_lines = usp_raw.split('\n')
-
-#                 # 💡 Custom logic for slide 1 — prepend Brand
-#                 if i == 1:
-#                     brand = data.get('Brand', '')
-#                     if brand:
-#                         usp_lines = [f"{brand} {usp_lines[0]}"] + usp_lines[1:]
-
-#                 for index, usp_line in enumerate(usp_lines):
-#                     demo = {
-#                         'Background image prompt': s,
-#                         'Foreground image file name': f"{data.get('Style ID')}_{data.get(f'USP Image {i}')}.PNG",
-#                         f'bullet_point_{index+1}': usp_line
-#                     }
-#                     slides[i].append(demo)
-
-#         output_files = []
-#         for i in range(1, 5):
-#             output_file = os.path.join(output_dir, f"slide_{i}.xlsx")
-#             pd.DataFrame(slides[i]).to_excel(output_file, index=False)
-#             output_files.append(f"slide_{i}.xlsx")
-
-#         return output_files
-
-#     except Exception as e:
-#         print(f"[!] Template generation failed: {e}")
-#         return []
-
-
->>>>>>> e33a4af (Update template_generator for brand check flexibility)
 import pandas as pd
 import os
 
@@ -71,7 +20,6 @@ def generate_all_templates(input_file: str, output_dir: str = "outputs") -> list
 
                 usp_lines = [line.strip() for line in usp_raw.strip().split('\n') if line.strip()]
 
-                # Custom logic for slide 1 — prepend Brand if not already there
                 if i == 1 and brand:
                     brand_lower = brand.lower()
                     usp_text_combined = ' '.join(usp_lines).lower()

@@ -7,6 +7,12 @@ import zipfile
 import shutil
 import os
 
+progress = {
+    "percent": 0,
+    "status": "idle",
+    "current": 0,
+    "total": 1
+}
 uploaded_folder_zip = None
 
 
@@ -80,200 +86,74 @@ async def upload_template(request: Request, file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buf)
     return templates.TemplateResponse("template.html", {"request": request, "file_uploaded": True})
 
+
 @app.post("/template/process", response_class=HTMLResponse)
 def process_template(request: Request):
+    global uploaded_template_file
     if not uploaded_template_file or not os.path.exists(uploaded_template_file):
         return templates.TemplateResponse("template.html", {"request": request, "file_uploaded": False, "error": "No file uploaded."})
-    from template_generator import generate_all_templates
+    
     output_files = generate_all_templates(uploaded_template_file, OUTPUT_FOLDER)
     context = {"request": request, "file_uploaded": True}
+
     if output_files:
+        # Pass only filenames, not full paths
         context["download_ready"] = True
-        context["output_files"] = output_files
+        context["output_files"] = [os.path.basename(f) for f in output_files]
     else:
         context["error"] = "Template generation failed."
     return templates.TemplateResponse("template.html", context)
     
 
 # For Image Downloading -----------------------------------------------------------------
-from slide_image_downloader import download_slide_images
+from slide_image_downloader import download_slide_images  # <-- add this
 
-# === CONFIG ===
 
-templates = Jinja2Templates(directory="templates")
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "outputs"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-
-# === STATE ===
-uploaded_downloader_file = None
-download_progress = {
-    "status": "idle",
-    "percent": 0,
-    "done": False,
-    "output_zip": None
-}
-
-# === ROUTES ===
-
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    return templates.TemplateResponse("downloader.html", {"request": request, "file_uploaded": False})
 
 @app.get("/downloader", response_class=HTMLResponse)
 def downloader_page(request: Request):
     return templates.TemplateResponse("downloader.html", {"request": request, "file_uploaded": False})
 
 @app.post("/downloader/upload", response_class=HTMLResponse)
-async def upload_downloader_file(request: Request, file: UploadFile = File(...)):
+async def upload_downloader(request: Request, file: UploadFile = File(...)):
     global uploaded_downloader_file
     uploaded_downloader_file = os.path.join(UPLOAD_FOLDER, file.filename)
-    with open(uploaded_downloader_file, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    with open(uploaded_downloader_file, "wb") as buf:
+        shutil.copyfileobj(file.file, buf)
+    return templates.TemplateResponse("downloader.html", {"request": request, "file_uploaded": True})
 
-    return templates.TemplateResponse("downloader.html", {
-        "request": request,
-        "file_uploaded": True
-    })
+@app.post("/downloader/process", response_class=HTMLResponse)
+def process_downloader(request: Request, background_tasks: BackgroundTasks):
+    if not uploaded_downloader_file or not os.path.exists(uploaded_downloader_file):
+        return templates.TemplateResponse("downloader.html", {"request": request, "file_uploaded": False, "error": "No file uploaded."})
 
-@app.post("/downloader/start")
-async def start_download_task(background_tasks: BackgroundTasks):
-    global download_progress
-    download_progress = {
-        "status": "downloading",
-        "percent": 0,
-        "done": False,
-        "output_zip": None
-    }
+    # Reset progress
+    progress.update({"percent": 0, "status": "downloading", "current": 0, "total": 1})
 
-    def run_download():
-        output_folder = download_slide_images(uploaded_downloader_file, "slide_images", download_progress)
+    try:
+        folder = download_slide_images(uploaded_downloader_file, progress=progress)
+        zip_filename = f"slides_output.zip"
+        zip_path = os.path.join(OUTPUT_FOLDER, zip_filename)
 
-        zip_path = os.path.join(OUTPUT_FOLDER, "slide_images.zip")
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, _, files in os.walk(output_folder):
-                for file in files:
-                    abs_path = os.path.join(root, file)
-                    arcname = os.path.relpath(abs_path, start=output_folder)
-                    zipf.write(abs_path, arcname)
+        shutil.make_archive(zip_path.replace(".zip", ""), 'zip', folder)
+        background_tasks.add_task(shutil.rmtree, folder)
 
-        download_progress['output_zip'] = "slide_images.zip"
-        download_progress['done'] = True
-        download_progress['status'] = 'completed'
-
-    background_tasks.add_task(run_download)
-    return {"message": "Download started"}
+        return templates.TemplateResponse("downloader.html", {
+            "request": request,
+            "file_uploaded": True,
+            "download_ready": True,
+            "zip_file": zip_filename
+        })
+    except Exception as e:
+        progress["status"] = "error"
+        return templates.TemplateResponse("downloader.html", {
+            "request": request,
+            "file_uploaded": True,
+            "error": str(e)
+        })
+    
+from fastapi.responses import JSONResponse
 
 @app.get("/downloader/progress")
-def check_progress():
-    return download_progress
-
-@app.get("/download/{filename}")
-def download_file(filename: str):
-    file_path = os.path.join(OUTPUT_FOLDER, filename)
-    if os.path.exists(file_path):
-        return FileResponse(path=file_path, filename=filename, media_type='application/octet-stream')
-    return {"error": "File not found"}
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-#For Folder creation for video -------------------------------------------------------------------
-# import os
-# import shutil
-# import time
-# import zipfile
-
-# from fastapi import FastAPI, UploadFile, File, Request
-# from fastapi.responses import FileResponse, HTMLResponse
-# from fastapi.staticfiles import StaticFiles
-# from fastapi.templating import Jinja2Templates
-
-# from folder_organizer import process_video_folders
-
-# # Create folders if not present
-# UPLOAD_FOLDER = "uploads"
-# OUTPUT_FOLDER = "outputs"
-# TEMPLATES_FOLDER = "templates"
-
-# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-# os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-
-# # Mount static files and templates
-# app.mount("/static", StaticFiles(directory="static"), name="static")
-# templates = Jinja2Templates(directory=TEMPLATES_FOLDER)
-
-# @app.get("/", response_class=HTMLResponse)
-# async def home(request: Request):
-#     return templates.TemplateResponse("index.html", {"request": request})
-
-
-# @app.get("/folder_organizer", response_class=HTMLResponse)
-# async def folder_organizer_page(request: Request):
-#     return templates.TemplateResponse("folder_organizer.html", {
-#         "request": request,
-#         "file_uploaded": False,
-#         "download_ready": False,
-#         "error": None,
-#     })
-
-
-# @app.post("/folder_organizer/process", response_class=HTMLResponse)
-# async def process_folder_zip(
-#     request: Request,
-#     file: UploadFile = File(...)
-# ):
-#     try:
-#         # Save uploaded zip file
-#         zip_filename = f"uploaded_{int(time.time())}.zip"
-#         uploaded_zip_path = os.path.join(UPLOAD_FOLDER, zip_filename)
-
-#         with open(uploaded_zip_path, "wb") as buffer:
-#             shutil.copyfileobj(file.file, buffer)
-
-#         # Extract uploaded zip
-#         extracted_path = os.path.join(UPLOAD_FOLDER, "extracted_" + str(int(time.time())))
-#         os.makedirs(extracted_path, exist_ok=True)
-
-#         with zipfile.ZipFile(uploaded_zip_path, 'r') as zip_ref:
-#             zip_ref.extractall(extracted_path)
-
-#         # Process with your organizer script
-#         organized_folder = process_video_folders(extracted_path, OUTPUT_FOLDER)
-
-#         # Zip the result
-#         zip_name = f"organized_output_{int(time.time())}.zip"
-#         zip_path = os.path.join(OUTPUT_FOLDER, zip_name)
-
-#         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-#             for root, _, files in os.walk(organized_folder):
-#                 for file in files:
-#                     full_path = os.path.join(root, file)
-#                     arcname = os.path.relpath(full_path, start=organized_folder)
-#                     zipf.write(full_path, arcname)
-
-#         # Return the page with download link
-#         return templates.TemplateResponse("folder_organizer.html", {
-#             "request": request,
-#             "file_uploaded": True,
-#             "download_ready": True,
-#             "output_file": zip_name
-#         })
-
-#     except Exception as e:
-#         return templates.TemplateResponse("folder_organizer.html", {
-#             "request": request,
-#             "file_uploaded": True,
-#             "error": f"Error processing file: {str(e)}"
-#         })
-
-
-# @app.get("/download/{filename}")
-# def download_file(filename: str):
-#     file_path = os.path.join(OUTPUT_FOLDER, filename)
-#     if os.path.exists(file_path):
-#         return FileResponse(path=file_path, filename=filename, media_type='application/zip')
-#     return {"error": "File not found"}
+def get_download_progress():
+    return JSONResponse(content=progress)
