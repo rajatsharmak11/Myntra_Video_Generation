@@ -9,6 +9,7 @@ from progress import progress_state
 from fastapi.responses import HTMLResponse, FileResponse,JSONResponse
 from fastapi import FastAPI, File, UploadFile, Request, Form
 from sse_starlette.sse import EventSourceResponse
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi import BackgroundTasks
@@ -176,6 +177,10 @@ def get_download_progress():
     return JSONResponse(content=progress)
 
 # For Video Merge -------------------------------------------------------------------------
+
+@app.get("/")
+async def root_redirect():
+    return RedirectResponse(url="/video_merge")
 
 @app.get("/merge-progress")
 async def merge_progress():
