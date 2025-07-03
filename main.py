@@ -1,11 +1,29 @@
+from myntra_image_merge import convert_excel_to_image_format
+from slide_image_downloader import download_slide_images
+from template_generator import generate_all_templates
+from video_merge import group_and_copy_videos_by_sku
+from video_merge import merge_videos_from_folder
+from progress import progress_state
+
+
+from fastapi.responses import HTMLResponse, FileResponse,JSONResponse
 from fastapi import FastAPI, File, UploadFile, Request, Form
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from sse_starlette.sse import EventSourceResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from fastapi import BackgroundTasks
+from collections import defaultdict
+from typing import Dict
+import threading
+import asyncio
 import zipfile
 import shutil
+import uuid
+import json
 import os
+
+# Track progress per session ID
+progress_tracker: Dict[str, int] = {}
 
 progress = {
     "percent": 0,
@@ -13,14 +31,23 @@ progress = {
     "current": 0,
     "total": 1
 }
+
+
+
 uploaded_folder_zip = None
 
+UPLOAD_FOLDER = "uploads"
+OUTPUT_FOLDER = "outputs"
+AUDIO_FILE_PATH = "Myntra_updated_audio.mp3"
 
-# For Image Merge -------------------------------------------------------------
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-from myntra_image_merge import convert_excel_to_image_format
-
-
+def zip_output_files(file_paths: list, output_zip_path: str):
+    with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for file_path in file_paths:
+            arcname = os.path.basename(file_path)
+            zipf.write(file_path, arcname)
 
 app = FastAPI()
 
@@ -28,17 +55,12 @@ app = FastAPI()
 def home(request: Request):
     return templates.TemplateResponse("home.html", {"request": request})
 
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "outputs"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 uploaded_file_name = None
 
-# Image Merge (script1_converter)
+# For Image Merge -------------------------------------------------------------
 @app.get("/image_merge", response_class=HTMLResponse)
 def image_merge_page(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "file_uploaded": False})
@@ -72,7 +94,7 @@ def download_file(filename: str):
 
 
 # For Template Generation --------------------------------------------------------------------------------
-from template_generator import generate_all_templates
+
 
 @app.get("/template", response_class=HTMLResponse)
 def template_generator_page(request: Request):
@@ -106,10 +128,6 @@ def process_template(request: Request):
     
 
 # For Image Downloading -----------------------------------------------------------------
-from slide_image_downloader import download_slide_images  # <-- add this
-
-
-
 @app.get("/downloader", response_class=HTMLResponse)
 def downloader_page(request: Request):
     return templates.TemplateResponse("downloader.html", {"request": request, "file_uploaded": False})
@@ -150,10 +168,85 @@ def process_downloader(request: Request, background_tasks: BackgroundTasks):
             "request": request,
             "file_uploaded": True,
             "error": str(e)
-        })
-    
-from fastapi.responses import JSONResponse
+        })    
+
 
 @app.get("/downloader/progress")
 def get_download_progress():
     return JSONResponse(content=progress)
+
+# For Video Merge -------------------------------------------------------------------------
+
+@app.get("/merge-progress")
+async def merge_progress():
+    async def event_generator():
+        while not progress_state["done"]:
+            yield f"data: {json.dumps(progress_state)}\n\n"
+            await asyncio.sleep(1)
+        yield f"data: {json.dumps(progress_state)}\n\n"
+    return EventSourceResponse(event_generator())
+
+@app.get("/video_merge", response_class=HTMLResponse)
+def video_merge_page(request: Request):
+    return templates.TemplateResponse("video_merge.html", {"request": request, "file_uploaded": False})
+
+
+@app.post("/video_merge/upload", response_class=HTMLResponse)
+async def upload_zip_and_merge(request: Request, file: UploadFile = File(...)):
+    session_id = str(uuid.uuid4())
+
+    session_path = os.path.join(UPLOAD_FOLDER, session_id)
+    os.makedirs(session_path, exist_ok=True)
+
+    # Save uploaded ZIP
+    zip_path = os.path.join(session_path, "uploaded.zip")
+    with open(zip_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # Extract ZIP
+    extracted_path = os.path.join(session_path, "extracted")
+    os.makedirs(extracted_path, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        zip_ref.extractall(extracted_path)
+
+    # If single root folder inside ZIP
+    extracted_items = os.listdir(extracted_path)
+    if len(extracted_items) == 1:
+        first_path = os.path.join(extracted_path, extracted_items[0])
+        if os.path.isdir(first_path):
+            extracted_path = first_path
+
+    print("Decoded structure:", os.listdir(extracted_path))
+
+    # Group and organize
+    sku_folder_path = group_and_copy_videos_by_sku(extracted_path, session_path)
+
+    # Merge
+    merged_files = merge_videos_from_folder(sku_folder_path, OUTPUT_FOLDER, AUDIO_FILE_PATH)
+    print("Merged outputs:", merged_files)
+
+    # Zip final result
+    zip_filename = f"merged_videos_{session_id}.zip"
+    zip_path = os.path.join(OUTPUT_FOLDER, zip_filename)
+    zip_output_files(merged_files, zip_path)
+
+    # Cleanup session
+    shutil.rmtree(session_path, ignore_errors=True)
+
+    context = {
+        "request": request,
+        "file_uploaded": True,
+        "merged_files": [os.path.basename(m) for m in merged_files],
+        "zip_file": os.path.basename(zip_path)
+    }
+
+    return templates.TemplateResponse("video_merge.html", context)
+
+
+@app.get("/download/{filename}")
+async def download_file(filename: str):
+    file_path = os.path.join(OUTPUT_FOLDER, filename)
+    if os.path.exists(file_path):
+        return FileResponse(path=file_path, filename=filename, media_type='application/zip')
+    return {"error": "File not found"}
+

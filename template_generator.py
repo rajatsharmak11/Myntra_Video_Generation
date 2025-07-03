@@ -14,11 +14,10 @@ def generate_all_templates(input_file: str, output_dir: str = "outputs") -> list
             style_id = data.get('Style ID', '')
 
             for i in range(1, 5):
-                usp_raw = data.get(f'USP {i}', '')
-                if not usp_raw or not isinstance(usp_raw, str):
-                    continue
-
-                usp_lines = [line.strip() for line in usp_raw.strip().split('\n') if line.strip()]
+                usp_raw = str(data.get(f'USP {i}', '')).strip()
+                # if not usp_raw or usp_raw.lower() == 'nan':
+                #     continue
+                usp_lines = [line.strip() for line in usp_raw.split('\n') if line.strip()]
 
                 if i == 1 and brand:
                     brand_lower = brand.lower()

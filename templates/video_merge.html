@@ -1,0 +1,42 @@
+<!-- templates/video_merge.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🎬 Video Merge Tool</title>
+</head>
+<body>
+    <h1>🎬 Video Merger</h1>
+
+    <h2>Step 1: Upload a ZIP File Containing Videos</h2>
+    <form action="/video_merge/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".zip" required>
+        <button type="submit">📤 Upload & Merge</button>
+    </form>
+
+    {% if file_uploaded %}
+        <h2>✅ Step 2: Download Final ZIP</h2>
+        <a href="/download/{{ zip_file }}" download>
+            📥 Download All Merged Videos (ZIP)
+        </a>
+    {% else %}
+        <div id="progress" style="margin-top: 30px;">
+            <h3>🛠️ Merging Progress</h3>
+            <progress id="progress-bar" value="0" max="100" style="width: 300px;"></progress>
+            <p id="progress-text">Waiting for merging to begin...</p>
+        </div>
+
+        <script>
+            const evtSource = new EventSource("/merge-progress");
+            evtSource.onmessage = function (e) {
+                const data = JSON.parse(e.data);
+                document.getElementById("progress-bar").value = data.percent;
+                document.getElementById("progress-text").textContent = data.message + ` (${data.percent}%)`;
+                if (data.done) evtSource.close();
+            };
+        </script>
+    {% endif %}
+
+    <br><br>
+    <a href="/">← Back to Home</a>
+</body>
+</html>
