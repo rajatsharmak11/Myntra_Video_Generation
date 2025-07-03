@@ -110,7 +110,7 @@ def merge_videos_from_folder(folder_path: str, output_folder: str, audio_file: s
                 codec="libx264",
                 audio_codec="aac",
                 preset="ultrafast",
-                threads=2,
+                threads=1,
                 remove_temp=True,
                 verbose=False
             )
